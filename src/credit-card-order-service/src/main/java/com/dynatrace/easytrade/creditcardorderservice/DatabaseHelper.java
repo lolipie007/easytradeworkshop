@@ -1,6 +1,8 @@
 package com.dynatrace.easytrade.creditcardorderservice;
 
 import com.dynatrace.easytrade.creditcardorderservice.models.*;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import java.sql.*;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -199,8 +201,59 @@ public class DatabaseHelper {
         }
     }
 
+    // Lazily-initialized connection pool. Replacing per-request DriverManager.getConnection()
+    // with a bounded, reused pool is the single biggest lever for handling 100x traffic: it
+    // caps concurrent DB connections and removes the connect handshake from every request.
+    private static volatile HikariDataSource dataSource;
+
+    private static HikariDataSource getDataSource() {
+        HikariDataSource ds = dataSource;
+        if (ds == null) {
+            synchronized (DatabaseHelper.class) {
+                ds = dataSource;
+                if (ds == null) {
+                    HikariConfig config = new HikariConfig();
+                    config.setJdbcUrl(System.getenv("MSSQL_CONNECTIONSTRING"));
+                    config.setPoolName("ccos-mssql-pool");
+                    config.setMaximumPoolSize(envInt("DB_POOL_MAX_SIZE", 20));
+                    config.setMinimumIdle(envInt("DB_POOL_MIN_IDLE", 2));
+                    config.setConnectionTimeout(envLong("DB_POOL_CONNECTION_TIMEOUT_MS", 10000));
+                    config.setMaxLifetime(envLong("DB_POOL_MAX_LIFETIME_MS", 1800000));
+                    dataSource = ds = new HikariDataSource(config);
+                    logger.info("Initialized MSSQL connection pool (maxPoolSize={})",
+                            config.getMaximumPoolSize());
+                }
+            }
+        }
+        return ds;
+    }
+
     public Connection getConnection() throws SQLException {
-        return DriverManager.getConnection(System.getenv("MSSQL_CONNECTIONSTRING"));
+        return getDataSource().getConnection();
+    }
+
+    private static int envInt(String name, int defaultValue) {
+        String raw = System.getenv(name);
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
+    private static long envLong(String name, long defaultValue) {
+        String raw = System.getenv(name);
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
     }
 
     public Optional<CreditCardOrderStatus> getLastOrderStatusForAccountId(Connection conn, Integer accountId)
