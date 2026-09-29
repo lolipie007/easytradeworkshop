@@ -33,6 +33,11 @@ dependencies {
 
     implementation 'com.microsoft.sqlserver:mssql-jdbc:12.10.2.jre11'
 
+    // Connection pooling: raw DriverManager.getConnection() per request does not survive
+    // 100x traffic (connection exhaustion + per-request handshake latency). HikariCP bounds
+    // and reuses connections across all endpoints.
+    implementation 'com.zaxxer:HikariCP:5.1.0'
+
     //lombok
     compileOnly 'org.projectlombok:lombok:1.18.42'
     annotationProcessor 'org.projectlombok:lombok:1.18.42'

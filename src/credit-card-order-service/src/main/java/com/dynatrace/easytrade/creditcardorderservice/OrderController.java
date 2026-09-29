@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dynatrace.easytrade.creditcardorderservice.models.BitcoinPayment;
+import com.dynatrace.easytrade.creditcardorderservice.models.BitcoinPaymentRequest;
 import com.dynatrace.easytrade.creditcardorderservice.models.CreditCardOrderRequest;
 import com.dynatrace.easytrade.creditcardorderservice.models.CreditCardOrderResponse;
 import com.dynatrace.easytrade.creditcardorderservice.models.CreditCardOrderStatus;
@@ -62,10 +64,13 @@ public class OrderController {
     public static final String ORDER_ALREADY_EXISTS = "A credit card order for given accountId already exists!";
     private final DatabaseHelper dbHelper;
     private final OpenFeatureAPI openFeatureAPI;
+    private final BitcoinPaymentService bitcoinPaymentService;
 
-    public OrderController(DatabaseHelper dbHelper, OpenFeatureAPI openFeatureAPI) {
+    public OrderController(DatabaseHelper dbHelper, OpenFeatureAPI openFeatureAPI,
+            BitcoinPaymentService bitcoinPaymentService) {
         this.dbHelper = dbHelper;
         this.openFeatureAPI = openFeatureAPI;
+        this.bitcoinPaymentService = bitcoinPaymentService;
     }
 
     @PostMapping(value="", consumes={"application/json", "application/xml"})
@@ -140,6 +145,39 @@ public class OrderController {
             logger.error("Exception occured", e);
             throw e;
         }
+    }
+
+    @PostMapping(value = "/bitcoin", consumes = {"application/json", "application/xml"})
+    @Operation(summary = "Submit an asynchronous bitcoin payment",
+            description = "Accepts the payment and returns 202 immediately; on-chain confirmation "
+                    + "happens off the request path. Poll /bitcoin/{paymentId}/status for the outcome. "
+                    + "Gated by the 'bitcoin_payments_enabled' feature flag (404 when disabled).")
+    public ResponseEntity<StandardResponse> submitBitcoinPayment(@RequestBody BitcoinPaymentRequest request) {
+        if (!bitcoinPaymentService.isEnabled()) {
+            return buildResponseEntity(HttpStatus.NOT_FOUND, "Bitcoin payments are not enabled.");
+        }
+        if (request == null || request.accountId() == null
+                || request.amountSatoshis() == null || request.amountSatoshis() <= 0) {
+            return buildResponseEntity(HttpStatus.BAD_REQUEST,
+                    "accountId and a positive amountSatoshis are required.", null, request, null);
+        }
+
+        BitcoinPayment payment = bitcoinPaymentService.submit(request);
+        // 202 Accepted: work acknowledged, confirmation still in progress.
+        return buildResponseEntity(HttpStatus.ACCEPTED,
+                "Bitcoin payment accepted and awaiting confirmation.", payment.toResponse());
+    }
+
+    @GetMapping("/bitcoin/{paymentId}/status")
+    @Operation(summary = "Get the status of a bitcoin payment")
+    public ResponseEntity<StandardResponse> getBitcoinPaymentStatus(@PathVariable String paymentId) {
+        if (!bitcoinPaymentService.isEnabled()) {
+            return buildResponseEntity(HttpStatus.NOT_FOUND, "Bitcoin payments are not enabled.");
+        }
+        return bitcoinPaymentService.get(paymentId)
+                .map(p -> buildResponseEntity(HttpStatus.OK, "Bitcoin payment found.", p.toResponse()))
+                .orElse(buildResponseEntity(HttpStatus.NOT_FOUND,
+                        "No bitcoin payment found for id: " + paymentId));
     }
 
     @DeleteMapping("/{accountId}")
