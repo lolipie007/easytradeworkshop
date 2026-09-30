@@ -27,9 +27,18 @@ builder.Services.AddSwaggerGen(options =>
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, xmlDocumentation));
 });
 
-// Connect to database
+// Connect to database.
+// broker-service issues ~2.4 DB calls per request and is the first service to saturate under
+// load (Bluebox capacity analysis). ADO.NET SqlClient defaults to Max Pool Size = 100, which
+// becomes the bottleneck well before CPU at high traffic. Make the pool size explicit and
+// env-tunable so it can be scaled without a code change.
 builder.Services.AddDbContext<BrokerDbContext>(options =>
-    options.UseSqlServer(builder.Configuration[Constants.MsSqlConnectionString])
+    options.UseSqlServer(
+        DatabaseConnection.WithPoolSize(
+            builder.Configuration[Constants.MsSqlConnectionString],
+            builder.Configuration[Constants.DbMaxPoolSize]
+        )
+    )
 );
 
 // Clear default logging providers and and new ones

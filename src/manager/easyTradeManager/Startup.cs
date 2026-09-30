@@ -29,7 +29,14 @@ namespace easyTradeManager
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            var connectionString = Configuration["MSSQL_CONNECTIONSTRING"];
+            // manager carries the highest request volume of any service and issues ~1 DB call
+            // per request across THREE DbContexts that share a single connection pool (pooling
+            // keys on the connection string). ADO.NET's default Max Pool Size of 100 would be
+            // exhausted well before CPU under 100x traffic, causing pool-checkout timeouts. Set
+            // the pool size explicitly and make it env-tunable (DB_MAX_POOL_SIZE).
+            var connectionString = DatabaseConnection.WithPoolSize(
+                Configuration["MSSQL_CONNECTIONSTRING"],
+                Configuration["DB_MAX_POOL_SIZE"]);
 
             services.AddDbContext<AccountsDbContext>(options => options.UseSqlServer(connectionString));
             services.AddDbContext<PackagesDbContext>(options => options.UseSqlServer(connectionString));
