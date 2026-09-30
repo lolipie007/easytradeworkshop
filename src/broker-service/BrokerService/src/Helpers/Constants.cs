@@ -7,6 +7,7 @@
         public const string EngineService = "ENGINE_HOSTANDPORT";
         public const string ProxyPrefix = "PROXY_PREFIX";
         public const string MsSqlConnectionString = "MSSQL_CONNECTIONSTRING";
+        public const string DbMaxPoolSize = "DB_MAX_POOL_SIZE";
         public const string FeatureFlagServiceProtocol = "FEATURE_FLAG_SERVICE_PROTOCOL";
         public const string FeatureFlagServiceBaseUrl = "FEATURE_FLAG_SERVICE_BASE_URL";
         public const string FeatureFlagServicePort = "FEATURE_FLAG_SERVICE_PORT";
